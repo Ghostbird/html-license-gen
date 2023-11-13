@@ -23,7 +23,7 @@ jobs:
         npm ci
         npm run docs-generate
     - name: Upload artifact
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v3
       with:
         name: build
         path: build

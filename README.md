@@ -1,6 +1,6 @@
 # HTML License Generator for NPM/Yarn based projects
 
-Generate a HTML page with list of dependency licenses based on npm/yarn installed packages. [Example output](https://dlvoy.github.io/html-license-gen/docs/example_licenses)
+Generate a HTML page with list of dependency licenses based on npm/yarn installed packages. [Example output](https://dlvoy.github.io/html-license-gen/example_licenses)
 
 This project is based on [npm-license-generator](https://github.com/mymindstorm/npm-license-generator)
 
