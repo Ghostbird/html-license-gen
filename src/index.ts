@@ -96,6 +96,7 @@ async function getPkgLicense(pkg: PkgInfo): Promise<LicenseInfo> {
 
     hasLicenseInfo = await new Promise<boolean>((resolve) => {
       if (fs.existsSync(packageLocalFile)) {
+        console.log(`Loading package.json from ${pkg.localPackageFile} for ${pkg.name}`);
         const pkgPayload = fs.readFileSync(packageLocalFile, 'utf8');
         const pkgInfo: PkgJsonData = JSON.parse(pkgPayload);
         if (pkgInfo.license) {
