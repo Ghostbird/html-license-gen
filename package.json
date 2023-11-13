@@ -1,6 +1,6 @@
 {
   "name": "html-license-gen",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Generate HTML with license text from NPM/Yarn dependencies",
   "bin": {
     "html-license-gen": "./build/html-license-gen"
