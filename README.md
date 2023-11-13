@@ -26,6 +26,7 @@ Positionals:
 Paths and files:
   --folder           Folder of NPM project. Defaults to current working
                      directory                                          [string]
+  --monorepo-root    Root folder of monorepo - if project is in monorepo[string]
   --out-path         HTML output path      [string] [default: "./licenses.html"]
   --tmp-folder-name  Name of temporary folder
                                           [string] [default: ".license-gen-tmp"]
@@ -65,6 +66,8 @@ Cache and optimization:
 Options:
   --version        Show version number                                 [boolean]
   --help           Show help                                           [boolean]
+  --log-level      Configures how verbose logs are, one of the following values:
+                   error, warn, info, verbose, debug  [string] [default: "warn"]
   --error-missing  Exit 1 if no license is present for a package
                                                       [boolean] [default: false]
 ```
@@ -79,15 +82,28 @@ for example; `--group` groups packages but `--no-group` disables grouping.
   **Disabled** by default.
   <br>
 
+* `--log-level`
+  Decides how detailed log are. Allowed levels:  `error`, `warn`, `info`, `verbose`, `debug`
+  `warn` by default
+  <br>
+ 
+
 ### Path related options:
 
 * `--folder` 
   Specify root directory of project to parse, by default current directory
   <br>
+
+* `--monorepo-root` 
+  Specify root directory of monorepo in case it is workspace based project, used to search for package, lock and license files.
+  <br>
+
+
 * `--out-path` 
   Specify output path where generated file will be written.
   File is always overwritten unless `--checksum-path` or `--checksum-embed` is used and no change is needed.
   <br>
+
 * `--tmp-folder-name` 
   Specify folder where to download tarballs. Folder need to be writable.
   Folder and its contents gets deleted after generating file unless `--keep-cache` options is given.
@@ -98,17 +114,21 @@ for example; `--group` groups packages but `--no-group` disables grouping.
   Groups packages which use exact same license texts, reducing duplicates and file size.
   Enabled by default.
   <br>
+
 * `--external-links`, `--no-external-links`
   Links package names (in license header) to their homepages (if and as configured in package.json `homepage`)
   Enabled by default.
   <br>
+
 * `--add-index`, `--no-add-index`
   Creates index at begin of file - list of anchors allowing quickly jumping to respective package library. 
   **Disabled** by default.
   <br>
+
 * `--title`
   Overrides default document title / main header (which is root app package name) with given string.
   <br>
+
 * `--template`
   Overrides default template path, allowing passing custom template.
   <br>
@@ -118,14 +138,17 @@ for example; `--group` groups packages but `--no-group` disables grouping.
 * `--registry`
   Allows specifying URL of custom NPM repository, otherwise default global NPM repo is used
   <br>
+
 * `--ignored`
   Semicolon-separated list of packages to ignore and NOT include in generated HTML.
   For example: `typescript;eslint;tar`
   <br>
+
 * `--only-prod`, `--no-only-prod`
   If enabled, ignores optional and development packages, using only "production" facing packages
   **Disabled** by default.
   <br>
+
 * `--package-lock`, `--no-package-lock`
   Instead of relying solely on `package.json` - also scan lock files to include all dependencies and sub-dependencies.
   Generates bigger file but include also dependencies of dependencies, not only direct deps.
@@ -138,6 +161,7 @@ for example; `--group` groups packages but `--no-group` disables grouping.
   If enabled, does not delete tmp folder, allowing cache to persist between runs
   **Disabled** by default.
   <br>
+
 * `--checksum-path`
   Allows skipping generation of HTM when packages have not changed.
   If path is specified, special file indicated by path is used to store checksum.
@@ -145,6 +169,7 @@ for example; `--group` groups packages but `--no-group` disables grouping.
   After generating HTML file, checksum is written/updated int this file.
   **NOTICE** - it does NOT checks for changes in license files, only if package list (and their version) are same.
   <br>
+
 * `--checksum-embed`, `--no-checksum-embed`
   Allows skipping generation of HTM when packages have not changed.
   If specified, embed checksum inside generated HTML (as an comment)
@@ -152,19 +177,23 @@ for example; `--group` groups packages but `--no-group` disables grouping.
   **NOTICE** - it does NOT checks for changes in license files, only if package list (and their version) are same.
   **Disabled** by default.
   <br>
+
 * `--avoid-registry`, `--no-avoid-registry`
   By default, instead asking online NPM repo, uses `package.json` files found in `node_modules`.
   It is way faster but may be inaccurate.
   Enabled by default.
   <br>
+
 * `--no-spdx`
   If enabled, does not use SPDX license repository as fallback for missing licenses
   **Disabled** by default.
   <br>
+
 * `--no-spdx`
   If enabled, use only SPDX license repository and do not use license files found in packages/tarballs
   **Disabled** by default.
   <br>
+  
 * `--only-local-tar`, `--no-only-local-tar`
   By default, use only local filesystem and tarballs for license discovery.
   `--no-only-local-tar` will enable downloading tarballs from resolved online URLs - but this may generate lot of internet traffic, especially when used together with `--package-lock` or without `--only-prod`

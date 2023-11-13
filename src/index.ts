@@ -7,6 +7,7 @@ import rimraf from 'rimraf';
 import yargs from 'yargs';
 import tar from 'tar';
 import mustache from 'mustache';
+import winston from 'winston';
 import spdx from 'spdx-expression-parse';
 // @ts-expect-error We do not have types for that
 import cacheModule from 'cache-service-cache-module';
@@ -16,15 +17,22 @@ import { yarnToNpm } from 'synp';
 
 import crypto from 'crypto';
 
+const transports = {
+  console: new winston.transports.Console({ level: 'warn' }),
+};
+
+const logger = winston.createLogger({
+  format: winston.format.combine(winston.format.cli(), winston.format.colorize()),
+  transports: [transports.console],
+});
+
 const cache = new cacheModule();
 const superagentCache = cachePlugin(cache);
 
 let CWD = '';
+let MONOREPO_ROOT: string | undefined = undefined;
 let REGISTRY = '';
-let PKG_JSON_PATH = '';
-let PKG_LOCK_JSON_PATH = '';
-let YARN_LOCK_PATH = '';
-let NODE_MODULES_PATH = '';
+let LOG_LEVEL = 'warn';
 let TMP_FOLDER_PATH = '';
 let OUT_PATH = '';
 let TEMPLATE_PATH = '';
@@ -81,6 +89,22 @@ function filterUnique(pkgs: GroupedLicensePkg[]): GroupedLicensePkg[] {
   return Array.from(unique.values());
 }
 
+function findInRepos(searchedPath: string): string | undefined {
+  const cwdPath = path.resolve(CWD, searchedPath);
+  if (fs.existsSync(cwdPath)) {
+    return cwdPath;
+  }
+
+  if (MONOREPO_ROOT && MONOREPO_ROOT.length > 0) {
+    const monoPath = path.resolve(MONOREPO_ROOT, searchedPath);
+    if (fs.existsSync(monoPath)) {
+      return monoPath;
+    }
+  }
+
+  return undefined;
+}
+
 async function getPkgLicense(pkg: PkgInfo): Promise<LicenseInfo> {
   const license: LicenseInfo = {
     pkg: pkg,
@@ -96,13 +120,13 @@ async function getPkgLicense(pkg: PkgInfo): Promise<LicenseInfo> {
 
     hasLicenseInfo = await new Promise<boolean>((resolve) => {
       if (fs.existsSync(packageLocalFile)) {
-        console.log(`Loading package.json from ${pkg.localPackageFile} for ${pkg.name}`);
+        logger.debug(`Loading package.json from ${pkg.localPackageFile} resolved ${packageLocalFile} for ${pkg.name}`);
         const pkgPayload = fs.readFileSync(packageLocalFile, 'utf8');
         const pkgInfo: PkgJsonData = JSON.parse(pkgPayload);
         if (pkgInfo.license) {
           license.type = pkgInfo.license;
         } else {
-          console.error(`Could not find license info in local package.json for ${pkg.name} ${pkg.version}`);
+          logger.error(`Could not find license info in local package.json for ${pkg.name} ${pkg.version}`);
           resolve(false);
           return license;
         }
@@ -114,7 +138,7 @@ async function getPkgLicense(pkg: PkgInfo): Promise<LicenseInfo> {
         }
         resolve(true);
       } else {
-        console.error(`Cannot parse local package: ${pkg.localPackageFile}`);
+        logger.error(`Cannot parse local package: ${pkg.localPackageFile}`);
         resolve(false);
       }
     });
@@ -125,7 +149,7 @@ async function getPkgLicense(pkg: PkgInfo): Promise<LicenseInfo> {
     const url = new URL(REGISTRY);
     url.pathname = pkg.name;
     if (AVOID_REGISTRY) {
-      console.log(`Checking ${pkg.name} in online registry: ${url}`);
+      logger.verbose(`Checking ${pkg.name} in online registry: ${url}`);
     }
     // Get registry info
     await new Promise<boolean>((resolve) => {
@@ -137,7 +161,7 @@ async function getPkgLicense(pkg: PkgInfo): Promise<LicenseInfo> {
             try {
               license.type = res.body.versions[pkg.version].license;
             } catch (e) {
-              console.error(`Could not find license info in registry for ${pkg.name} ${pkg.version}`);
+              logger.error(`Could not find license info in registry for ${pkg.name} ${pkg.version}`);
               resolve(false);
               return license;
             }
@@ -148,7 +172,7 @@ async function getPkgLicense(pkg: PkgInfo): Promise<LicenseInfo> {
             try {
               pkg.tarball = res.body.versions[pkg.version].dist.tarball;
             } catch (e) {
-              console.error(`Could not find version info for ${pkg.name} ${pkg.version}`);
+              logger.error(`Could not find version info for ${pkg.name} ${pkg.version}`);
               resolve(false);
               return license;
             }
@@ -157,9 +181,9 @@ async function getPkgLicense(pkg: PkgInfo): Promise<LicenseInfo> {
         })
         .catch((e) => {
           if (e?.status) {
-            console.warn(`Could not get info from registry for ${pkg.name}! HTTP status code ${e.status}`);
+            logger.warn(`Could not get info from registry for ${pkg.name}! HTTP status code ${e.status}`);
           } else {
-            console.warn(`Could not get info from registry for ${pkg.name}! Error: ${e}`);
+            logger.warn(`Could not get info from registry for ${pkg.name}! Error: ${e}`);
           }
           resolve(false);
           return license;
@@ -170,23 +194,26 @@ async function getPkgLicense(pkg: PkgInfo): Promise<LicenseInfo> {
   // look for license in node_modules
   if (!ONLY_SPDX) {
     try {
-      let files = getAllFiles(path.join(NODE_MODULES_PATH, pkg.name));
-      files = files.filter((path) => {
-        const regex = /[/\\](LICENSE|LICENCE|COPYING|COPYRIGHT)\.?.*/gim;
-        const extension = path.split('.');
-        if (NO_MATCH_EXTENSIONS.includes(extension[extension.length - 1])) {
+      const packageDir = findInRepos(`node_modules/${pkg.name}`);
+      if (packageDir) {
+        let files = getAllFiles(packageDir);
+        files = files.filter((path) => {
+          const regex = /[/\\](LICENSE|LICENCE|COPYING|COPYRIGHT)\.?.*/gim;
+          const extension = path.split('.');
+          if (NO_MATCH_EXTENSIONS.includes(extension[extension.length - 1])) {
+            return false;
+          }
+          if (regex.test(path)) {
+            return true;
+          }
           return false;
+        });
+        for (const path of files) {
+          logger.verbose(`Reading license from: ${path}`);
+          const text = fs.readFileSync(path).toString().trim();
+          const textId = crypto.createHash('sha1').update(text).digest('hex');
+          license.texts[textId] = text;
         }
-        if (regex.test(path)) {
-          return true;
-        }
-        return false;
-      });
-      for (const path of files) {
-        console.log(`Reading license from: ${path}`);
-        const text = fs.readFileSync(path).toString().trim();
-        const textId = crypto.createHash('sha1').update(text).digest('hex');
-        license.texts[textId] = text;
       }
     } catch (e) {
       /* empty */
@@ -198,18 +225,18 @@ async function getPkgLicense(pkg: PkgInfo): Promise<LicenseInfo> {
   if (!ONLY_SPDX && !ONLY_LOCAL_TAR && !Object.entries(license.texts).length) {
     const hasTarball = await new Promise<boolean>((resolve) => {
       if (!pkg.tarball) {
-        console.error('No tarball location', pkg);
+        logger.error('No tarball location', pkg);
         resolve(false);
         return license;
       }
 
       if (!pkg.tarball.startsWith('https://') && !pkg.tarball.startsWith('http://')) {
-        console.error('Not online location', pkg);
+        logger.error('Not online location', pkg);
         resolve(false);
         return license;
       }
 
-      console.log(`Downloading ${pkg.tarball}`);
+      logger.verbose(`Downloading ${pkg.tarball}`);
       superagent
         .get(pkg.tarball)
         .buffer(true)
@@ -246,7 +273,7 @@ async function getPkgLicense(pkg: PkgInfo): Promise<LicenseInfo> {
       // Throw license files into array
       const files = getAllFiles(extractFolder);
       for (const path of files) {
-        console.log(`Reading tarball license from: ${path}`);
+        logger.verbose(`Reading tarball license from: ${path}`);
         const text = fs.readFileSync(path).toString().trim();
         const textId = crypto.createHash('sha1').update(text).digest('hex');
         license.texts[textId] = text;
@@ -256,7 +283,7 @@ async function getPkgLicense(pkg: PkgInfo): Promise<LicenseInfo> {
 
   if (!Object.entries(license.texts).length) {
     if (!ONLY_SPDX) {
-      console.warn(`No license file found for package ${license.pkg.name}${NO_SPDX ? '' : ', using SPDX string'}.`);
+      logger.warn(`No license file found for package ${license.pkg.name}${NO_SPDX ? '' : ', using SPDX string'}.`);
     }
 
     try {
@@ -267,7 +294,7 @@ async function getPkgLicense(pkg: PkgInfo): Promise<LicenseInfo> {
           try {
             parsedLicense = spdx(license.type);
           } catch (e) {
-            console.error(`Error: Could not parse license string '${license.type}' for ${license.pkg.name}!`);
+            logger.error(`Error: Could not parse license string '${license.type}' for ${license.pkg.name}!`);
             resolve();
             return;
           }
@@ -308,7 +335,7 @@ async function getPkgLicense(pkg: PkgInfo): Promise<LicenseInfo> {
                 const prefetchCandidate = path.join(__dirname, 'spdx', `${licenseString}.txt`);
 
                 if (fs.existsSync(prefetchCandidate)) {
-                  console.log(`Using prefetched SPDX license ${licenseString} `);
+                  logger.debug(`Using prefetched SPDX license ${licenseString} `);
                   const prefTxt = fs.readFileSync(prefetchCandidate, 'utf8');
                   const textId = crypto.createHash('sha1').update(prefTxt).digest('hex');
                   license.texts[textId] = prefTxt;
@@ -316,7 +343,7 @@ async function getPkgLicense(pkg: PkgInfo): Promise<LicenseInfo> {
                   return;
                 }
 
-                console.log(`Downloading SPDX license ${licenseString}`);
+                logger.info(`Downloading SPDX license ${licenseString}`);
 
                 superagent
                   .get(`https://raw.githubusercontent.com/spdx/license-list-data/master/text/${licenseString}.txt`)
@@ -327,28 +354,28 @@ async function getPkgLicense(pkg: PkgInfo): Promise<LicenseInfo> {
                     resolve();
                   })
                   .catch((e) => {
-                    console.warn(`Error downloading license for ${license.pkg.name}. L: ${licenseString} S: ${e.status}`);
+                    logger.warn(`Error downloading license for ${license.pkg.name}. L: ${licenseString} S: ${e.status}`);
                     reject(e);
                   });
               });
             } catch (e) {
-              console.error(`Error: ${e}!`);
+              logger.error(`Error: ${e}!`);
             }
           }
           resolve();
         });
       }
     } catch (e) {
-      console.error(`Error: ${e}!`);
+      logger.error(`Error: ${e}!`);
       return license;
     }
 
     if (!Object.entries(license.texts).length) {
       if (ERR_MISSING) {
-        console.error(`Missing license - no file generated`);
+        logger.error(`Missing license - no file generated`);
         process.exit(1);
       } else {
-        console.error(`No license file for ${license.pkg.name}, skipping...`);
+        logger.error(`No license file for ${license.pkg.name}, skipping...`);
       }
     }
   }
@@ -390,34 +417,48 @@ function buildIndex(licenses: GroupedLicense[]) {
 async function main(): Promise<void> {
   let pkgInfo: PkgJsonData | undefined;
   let pkgLockInfo: PkgLockJsonData | undefined;
+
   try {
-    console.log(`Parsing package file: ${PKG_JSON_PATH}`);
-    const pkgJson = fs.readFileSync(PKG_JSON_PATH, 'utf8');
-    pkgInfo = JSON.parse(pkgJson);
-    if (fs.existsSync(PKG_LOCK_JSON_PATH)) {
-      const pkgLockJson = fs.readFileSync(PKG_LOCK_JSON_PATH, 'utf8');
-      pkgLockInfo = JSON.parse(pkgLockJson);
+    const packageFile = findInRepos('package.json');
+    if (packageFile) {
+      logger.verbose(`Parsing package file: ${packageFile}`);
+      const pkgJson = fs.readFileSync(packageFile, 'utf8');
+      pkgInfo = JSON.parse(pkgJson);
     }
 
-    if (fs.existsSync(YARN_LOCK_PATH)) {
-      console.log(`Using ${YARN_LOCK_PATH} instead of npm lock file`);
-      const stringifiedPackageLock = yarnToNpm(CWD);
-      pkgLockInfo = JSON.parse(stringifiedPackageLock);
+    const npmLockFile = findInRepos('package-lock.json');
+    if (npmLockFile) {
+      logger.verbose(`Using lock file:  ${npmLockFile}`);
+      const pkgLockJson = fs.readFileSync(npmLockFile, 'utf8');
+      pkgLockInfo = JSON.parse(pkgLockJson);
+    } else {
+      const yarnLockFile = findInRepos('yarn.lock');
+      if (yarnLockFile) {
+        const yarnRootDir = path.dirname(yarnLockFile);
+        logger.info(`Using yarn instead of npm lock file:  ${yarnLockFile}`);
+        const stringifiedPackageLock = yarnToNpm(yarnRootDir);
+        pkgLockInfo = JSON.parse(stringifiedPackageLock);
+      }
     }
   } catch (e) {
-    console.error('Error parsing package.json or package-lock.json', e);
+    logger.error('Error parsing package.json, package-lock.json or yarn.lock', e);
     process.exit(1);
   }
 
   if (!pkgInfo) {
-    console.error('pkgInfo undefined');
+    logger.error('pkgInfo undefined - missing package.json file');
+    process.exit(1);
+  }
+
+  if (!pkgLockInfo) {
+    logger.error('pkgLockInfo undefined - missing package lock file');
     process.exit(1);
   }
 
   const supportedLock = pkgLockInfo && (pkgLockInfo.lockfileVersion == 1 || pkgLockInfo.lockfileVersion == 3);
 
   if (pkgLockInfo && !supportedLock) {
-    console.info(`Unsupported package-lock version ${pkgLockInfo.lockfileVersion}! Falling back to using package.json only!`);
+    logger.warn(`Unsupported package-lock version ${pkgLockInfo.lockfileVersion}! Falling back to using package.json only!`);
   }
 
   let keys: string[] = [];
@@ -435,10 +476,14 @@ async function main(): Promise<void> {
     }
   } else {
     if (pkgLockInfo && pkgLockInfo.lockfileVersion == 1 && (pkgLockInfo as PkgLockJsonDataV1).dependencies) {
-      if (ONLY_PROD) {
-        console.log('Using --only-prod with --package-lock and yarn based lock or old (v1) npm lock do not work! Usw v3 npm lock');
-      }
       keys = Object.keys((pkgLockInfo as PkgLockJsonDataV1).dependencies);
+      if (ONLY_PROD) {
+        logger.warn('Using --only-prod with --package-lock and yarn based lock or old (v1) npm lock do not work! Use v3 npm lock');
+        if (pkgInfo.dependencies) {
+          const prodKeys = Object.keys(pkgInfo.dependencies);
+          keys = keys.filter((k) => prodKeys.includes(k));
+        }
+      }
     }
     if (pkgLockInfo && pkgLockInfo.lockfileVersion == 3 && (pkgLockInfo as PkgLockJsonDataV3).packages) {
       const prodKeys = pkgInfo.dependencies ? Object.keys(pkgInfo.dependencies) : [];
@@ -471,7 +516,7 @@ async function main(): Promise<void> {
         info.tarball = lockInfo.dependencies[pkg].resolved;
         info.localPackageFile = `node_modules/${pkg}/package.json`;
       } else {
-        console.warn(`Could not find ${pkg} in package-lock.json! Skipping...`);
+        logger.warn(`Could not find ${pkg} in package-lock.json! Skipping...`);
         continue;
       }
     }
@@ -483,7 +528,7 @@ async function main(): Promise<void> {
         info.tarball = lockInfo.packages[pkgKey].resolved;
         info.localPackageFile = `node_modules/${pkg}/package.json`;
       } else {
-        console.warn(`Could not find ${pkg} in package-lock.json! Skipping...`);
+        logger.warn(`Could not find ${pkg} in package-lock.json! Skipping...`);
         continue;
       }
     }
@@ -498,7 +543,7 @@ async function main(): Promise<void> {
       info.version = lockInfo.packages[path].version;
       info.tarball = lockInfo.packages[path].resolved;
     } else {
-      console.warn(`Could not find ${pkg} in package-lock.json! Skipping...`);
+      logger.warn(`Could not find ${pkg} in package-lock.json! Skipping...`);
       continue;
     }
     pkgs.push(info);
@@ -519,7 +564,9 @@ async function main(): Promise<void> {
     if (fs.existsSync(CHECKSUM_PATH as string)) {
       const gotDigest = fs.readFileSync(CHECKSUM_PATH as string, 'utf8');
       if (gotDigest == versionCorpusHash) {
-        console.log(`Generating license HTML skipped, license already generated for corpus: ${versionCorpusHash}`);
+        logger.info('Generating license HTML skipped');
+        logger.verbose(`License already generated for corpus: ${versionCorpusHash}`);
+        logger.debug(`Contains packages: ${versionCorpus}`);
         process.exit(0);
       }
     }
@@ -527,15 +574,19 @@ async function main(): Promise<void> {
 
   if (CHECKSUM_EMBED !== false) {
     if (fs.existsSync(OUT_PATH)) {
+      logger.debug(`Found previously generated HTML file: ${OUT_PATH}`)
       const oldHtml = fs.readFileSync(OUT_PATH, 'utf8');
       if (oldHtml.includes(`[[checksum: ${versionCorpusHash}]]`)) {
-        console.log(`Generating license HTML skipped, license already generated for corpus: ${versionCorpusHash}`);
+        logger.info('Generating license HTML skipped');
+        logger.verbose(`License already generated for corpus: ${versionCorpusHash}`);
+        logger.debug(`Contains packages: ${versionCorpus}`);
         process.exit(0);
       }
     }
   }
 
-  console.log(`Generating license HTML for corpus: ${versionCorpusHash} \n Contains packages: ${versionCorpus}`);
+  logger.verbose(`Generating license HTML for corpus: ${versionCorpusHash}`);
+  logger.debug(`Contains packages: ${versionCorpus}`);
 
   if (!fs.existsSync(TMP_FOLDER_PATH)) {
     fs.mkdirSync(TMP_FOLDER_PATH);
@@ -549,7 +600,7 @@ async function main(): Promise<void> {
     const licenses = await Promise.all(promises);
     licenses.sort((a, b) => fixedName(a.pkg.name).localeCompare(fixedName(b.pkg.name)));
 
-    console.log(`Found ${licenses.length} licenses`);
+    logger.info(`Found ${licenses.length} licenses`);
 
     const preGroupedLicenses: GroupedLicense[] = [];
     let groupedLicenses: GroupedLicense[] = [];
@@ -626,7 +677,7 @@ async function main(): Promise<void> {
       rl.licenses = Object.values(rl.texts);
     });
 
-    console.log(`Loading template from: ${TEMPLATE_PATH}`);
+    logger.verbose(`Loading template from: ${TEMPLATE_PATH}`);
     const outText = mustache.render(fs.readFileSync(TEMPLATE_PATH).toString(), {
       renderLicenses,
       name: TITLE ? TITLE : pkgInfo.name,
@@ -641,17 +692,20 @@ async function main(): Promise<void> {
     }
 
     fs.writeFileSync(OUT_PATH, outText);
+    logger.verbose(`Saved output HTML into: ${OUT_PATH}`);
     if (CHECKSUM_PATH !== false) {
       fs.writeFileSync(CHECKSUM_PATH as string, versionCorpusHash);
+      logger.verbose(`Saved checksum ${versionCorpusHash} into: ${CHECKSUM_PATH}`);
     }
   } catch (e) {
-    console.error('Error!', e);
+    logger.error('Error!', e);
   }
 
   if (!KEEP_CACHE) {
+    logger.debug(`Deleting cache from: ${TMP_FOLDER_PATH}`)
     rimraf.sync(TMP_FOLDER_PATH);
   }
-  console.log('Done!');
+  logger.info('Done!');
 }
 
 yargs
@@ -664,6 +718,11 @@ yargs
       .positional('folder', {
         describe: 'Folder of NPM project. Defaults to current working directory',
         type: 'string',
+      })
+      .option('monorepo-root', {
+        describe: 'Root folder of monorepo - if project is in monorepo',
+        type: 'string',
+        default: undefined,
       })
       .option('out-path', {
         describe: 'HTML output path',
@@ -762,20 +821,26 @@ yargs
         type: 'boolean',
         default: true,
       })
+
+      // misc
+      .option('log-level', {
+        describe: 'Configures how verbose logs are, one of the following values: error, warn, info, verbose, debug',
+        type: 'string',
+        default: 'warn',
+      })
+
       .option('error-missing', {
         describe: 'Exit 1 if no license is present for a package',
         type: 'boolean',
         default: false,
       }).argv;
 
+    const allowedLogLevels = ['error', 'warn', 'info', 'verbose', 'debug'];
     const folder = argv.folder || (argv._[0] as string);
     CWD = folder ? path.resolve(folder) : process.cwd();
+    MONOREPO_ROOT = argv['monorepo-root'] ? path.resolve(argv['monorepo-root']) : undefined;
     REGISTRY = argv.registry;
-    PKG_JSON_PATH = path.resolve(CWD, 'package.json');
-    PKG_LOCK_JSON_PATH = path.resolve(CWD, 'package-lock.json');
-    YARN_LOCK_PATH = path.resolve(CWD, 'yarn.lock');
     TMP_FOLDER_PATH = path.resolve(CWD, argv['tmp-folder-name']);
-    NODE_MODULES_PATH = path.resolve(CWD, 'node_modules');
     OUT_PATH = path.resolve(argv['out-path']);
     GROUP = argv['group'];
     EXTERNAL_LINKS = argv['external-links'];
@@ -793,10 +858,12 @@ yargs
     ONLY_SPDX = argv['only-spdx'];
     ONLY_LOCAL_TAR = argv['only-local-tar'];
     ERR_MISSING = argv['error-missing'];
+    LOG_LEVEL = argv['log-level'] ? (allowedLogLevels.includes(argv['log-level']) ? argv['log-level'] : 'warn') : 'warn';
+    transports.console.level = LOG_LEVEL;
     main();
   })
   .help()
-  .group(['folder', 'out-path', 'tmp-folder-name'], 'Paths and files:')
+  .group(['folder', 'monorepo-root', 'out-path', 'tmp-folder-name'], 'Paths and files:')
   .group(['group', 'external-links', 'add-index', 'title', 'template'], 'Output HTML appearance:')
   .group(['registry', 'ignored', 'only-prod', 'package-lock'], 'Package related:')
   .group(['keep-cache', 'checksum-path', 'checksum-embed', 'avoid-registry', 'no-spdx', 'only-spdx', 'only-local-tar'], 'Cache and optimization:').argv;

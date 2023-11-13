@@ -1,6 +1,6 @@
 {
   "name": "html-license-gen",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "description": "Generate HTML with license text from NPM/Yarn dependencies",
   "bin": {
     "html-license-gen": "./build/html-license-gen"
@@ -12,11 +12,11 @@
     "build": "eslint --fix src && tsc && cp -p -r lib/* build && tools/prefetch.sh",
     "build-only": "tsc && cp -p -r lib/* build",
     "docs-generate": "npx . --add-index --title=\"HTML License Gen - third party licenses\" --out-path=./docs/example_licenses.html",
-    "test::sub-deps": "npx . --package-lock --add-index --no-external-links --out-path=./tests/output/test_long_licenses.html",
-    "test::sub-deps-registry": "npx . --package-lock --add-index --no-external-links --no-avoid-registry --out-path=./tests/output/test_long_licenses_reg.html",
-    "tes::ignored": "npx . --add-index --no-external-links --ignored=\"tar;@types/tar;eslint\" --out-path=./tests/output/test_ignored.html",
-    "test::only-prod": "npx . --add-index --no-external-links --only-prod --out-path=./tests/output/test_only_prod.html",
-    "test::only-prod-lock": "npx . --add-index --no-external-links --only-prod --package-lock --out-path=./tests/output/test_only_prod_lock.html",
+    "test::sub-deps": "npx . --log-level=verbose --package-lock --add-index --no-external-links --out-path=./tests/output/test_long_licenses.html",
+    "test::sub-deps-registry": "npx . --log-level=verbose --package-lock --add-index --no-external-links --no-avoid-registry --out-path=./tests/output/test_long_licenses_reg.html",
+    "tes::ignored": "npx . --log-level=verbose --add-index --no-external-links --ignored=\"tar;@types/tar;eslint\" --out-path=./tests/output/test_ignored.html",
+    "test::only-prod": "npx . --log-level=verbose --add-index --no-external-links --only-prod --out-path=./tests/output/test_only_prod.html",
+    "test::only-prod-lock": "npx . --log-level=verbose --add-index --no-external-links --only-prod --package-lock --out-path=./tests/output/test_only_prod_lock.html",
     "help": "LC_ALL=en npx . --help",
     "watch": "tsc --watch"
   },
@@ -46,6 +46,7 @@
     "superagent-cache-plugin": "^3.0.0-beta.1",
     "synp": "^1.9.10",
     "tar": "^6.2.0",
+    "winston": "^3.11.0",
     "yargs": "^15.3.1"
   },
   "keywords": [
