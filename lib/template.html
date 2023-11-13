@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport"
+    content="width=device-width, initial-scale=1">
+    <style>
+      .licenses blockquote {
+        white-space: pre-wrap;
+        background-color: whitesmoke;
+        padding: 1ch;
+        display: inline-block;
+        font-family: 'Courier New', Courier, monospace;
+        font-size: small;
+        width: 85ch;
+      }
+  
+      .index {
+        margin-bottom: 1rem;
+        padding-bottom: 1rem;
+        border-bottom: 1px solid silver;
+      }
+  
+      @media only screen and (max-width: 768px) {
+        .licenses blockquote {
+          width: 96%;
+          padding: 2%;
+          margin: 0px;
+          margin-bottom: 1em;
+          font-size: 1.8vw;
+        }
+      }
+  
+      @media only screen and (min-width: 768px) {
+        body {
+          margin-left: 10vw;
+        }
+      }
+  
+      .licenses h3,
+      #package-name {
+        font-family: sans-serif;
+      }
+  
+      
+    </style>
+</head>
+
+<body>
+  <h1 id="package-name">{{name}}</h1>
+  {{#addIndex}}
+  <div class="index">
+    {{#index}}<a href="#{{link}}" />{{name}}</a>{{#additional}} <a href="#{{link}}" />[{{name}}]</a>{{/additional}}{{#comma}}, {{/comma}}{{/index}}
+  </div>
+  {{/addIndex}}
+  <div class="licenses">
+    {{#renderLicenses}}
+    <h3>
+      {{#pkgs}}
+      <a name="{{uid}}-pkg-{{shortLink}}"></a>{{#homepage}}<a href="{{{homepage}}}">{{/homepage}}{{name}}{{#homepage}}</a>{{/homepage}}{{#comma}}, {{/comma}}
+      {{/pkgs}}
+    </h3>
+    {{#licenses}}
+    <blockquote>{{.}}</blockquote>
+    {{/licenses}}
+    {{/renderLicenses}}
+  </div>
+  {{{comments}}}
+</body>

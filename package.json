@@ -1,0 +1,66 @@
+{
+  "name": "html-license-gen",
+  "version": "1.0.0",
+  "description": "Generate HTML with license text from NPM/Yarn dependencies",
+  "bin": {
+    "html-license-gen": "./build/html-license-gen"
+  },
+  "files": [
+    "build"
+  ],
+  "scripts": {
+    "build": "eslint --fix src && tsc && cp -p -r lib/* build && tools/prefetch.sh",
+    "build-only": "tsc && cp -p -r lib/* build",
+    "docs-generate": "npx . --add-index --title=\"HTML License Gen - third party licenses\" --out-path=./docs/example_licenses.html",
+    "test::sub-deps": "npx . --package-lock --add-index --no-external-links --out-path=./tests/output/test_long_licenses.html",
+    "test::sub-deps-registry": "npx . --package-lock --add-index --no-external-links --no-avoid-registry --out-path=./tests/output/test_long_licenses_reg.html",
+    "tes::ignored": "npx . --add-index --no-external-links --ignored=\"tar;@types/tar;eslint\" --out-path=./tests/output/test_ignored.html",
+    "test::only-prod": "npx . --add-index --no-external-links --only-prod --out-path=./tests/output/test_only_prod.html",
+    "test::only-prod-lock": "npx . --add-index --no-external-links --only-prod --package-lock --out-path=./tests/output/test_only_prod_lock.html",
+    "help": "LC_ALL=en npx . --help",
+    "watch": "tsc --watch"
+  },
+  "author": "Dominik Dzienia <dominik.dzienia@gmail.com>",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/mustache": "^4.0.1",
+    "@types/node": "^14.0.1",
+    "@types/rimraf": "^3.0.0",
+    "@types/superagent": "^4.1.7",
+    "@types/tar": "^6.1.8",
+    "@types/yargs": "^15.0.5",
+    "@typescript-eslint/eslint-plugin": "^6.10.0",
+    "@typescript-eslint/parser": "^6.10.0",
+    "eslint": "^8.0.0",
+    "eslint-config-prettier": "^6.11.0",
+    "eslint-plugin-prettier": "^3.1.3",
+    "prettier": "^2.0.5",
+    "typescript": "^5.2.2"
+  },
+  "dependencies": {
+    "cache-service-cache-module": "^2.0.1",
+    "mustache": "^4.0.1",
+    "rimraf": "^3.0.2",
+    "spdx-expression-parse": "^3.0.1",
+    "superagent": "^v7.0.2",
+    "superagent-cache-plugin": "^3.0.0-beta.1",
+    "synp": "^1.9.10",
+    "tar": "^6.2.0",
+    "yargs": "^15.3.1"
+  },
+  "keywords": [
+    "license",
+    "licence",
+    "npm",
+    "html",
+    "spdx",
+    "static",
+    "generator",
+    "compliance"
+  ],
+  "homepage": "https://github.com/dlvoy/html-license-gen",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dlvoy/html-license-gen.git"
+  }
+}

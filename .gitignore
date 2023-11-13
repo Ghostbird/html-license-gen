@@ -1,0 +1,6 @@
+node_modules
+licenses.html
+build
+.license-gen-tmp
+tools/prefetched/*.txt
+tests/output/*
