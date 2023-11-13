@@ -182,6 +182,7 @@ async function getPkgLicense(pkg: PkgInfo): Promise<LicenseInfo> {
         return false;
       });
       for (const path of files) {
+        console.log(`Reading license from: ${path}`);
         const text = fs.readFileSync(path).toString().trim();
         const textId = crypto.createHash('sha1').update(text).digest('hex');
         license.texts[textId] = text;
@@ -244,6 +245,7 @@ async function getPkgLicense(pkg: PkgInfo): Promise<LicenseInfo> {
       // Throw license files into array
       const files = getAllFiles(extractFolder);
       for (const path of files) {
+        console.log(`Reading tarball license from: ${path}`);
         const text = fs.readFileSync(path).toString().trim();
         const textId = crypto.createHash('sha1').update(text).digest('hex');
         license.texts[textId] = text;
@@ -388,6 +390,7 @@ async function main(): Promise<void> {
   let pkgInfo: PkgJsonData | undefined;
   let pkgLockInfo: PkgLockJsonData | undefined;
   try {
+    console.log(`Parsing package file: ${PKG_JSON_PATH}`);
     const pkgJson = fs.readFileSync(PKG_JSON_PATH, 'utf8');
     pkgInfo = JSON.parse(pkgJson);
     if (fs.existsSync(PKG_LOCK_JSON_PATH)) {
@@ -622,6 +625,7 @@ async function main(): Promise<void> {
       rl.licenses = Object.values(rl.texts);
     });
 
+    console.log(`Loading template from: ${TEMPLATE_PATH}`);
     const outText = mustache.render(fs.readFileSync(TEMPLATE_PATH).toString(), {
       renderLicenses,
       name: TITLE ? TITLE : pkgInfo.name,
