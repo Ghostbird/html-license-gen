@@ -116,10 +116,9 @@ async function getPkgLicense(pkg: PkgInfo): Promise<LicenseInfo> {
   let hasLicenseInfo = false;
 
   if (AVOID_REGISTRY) {
-    const packageLocalFile = path.resolve(CWD, pkg.localPackageFile);
-
     hasLicenseInfo = await new Promise<boolean>((resolve) => {
-      if (fs.existsSync(packageLocalFile)) {
+      const packageLocalFile = findInRepos(pkg.localPackageFile);
+      if (packageLocalFile) {
         logger.debug(`Loading package.json from ${pkg.localPackageFile} resolved ${packageLocalFile} for ${pkg.name}`);
         const pkgPayload = fs.readFileSync(packageLocalFile, 'utf8');
         const pkgInfo: PkgJsonData = JSON.parse(pkgPayload);
@@ -138,7 +137,7 @@ async function getPkgLicense(pkg: PkgInfo): Promise<LicenseInfo> {
         }
         resolve(true);
       } else {
-        logger.error(`Cannot parse local package: ${pkg.localPackageFile}`);
+        logger.verbose(`Cannot find local package: ${pkg.localPackageFile}`);
         resolve(false);
       }
     });
@@ -574,7 +573,7 @@ async function main(): Promise<void> {
 
   if (CHECKSUM_EMBED !== false) {
     if (fs.existsSync(OUT_PATH)) {
-      logger.debug(`Found previously generated HTML file: ${OUT_PATH}`)
+      logger.debug(`Found previously generated HTML file: ${OUT_PATH}`);
       const oldHtml = fs.readFileSync(OUT_PATH, 'utf8');
       if (oldHtml.includes(`[[checksum: ${versionCorpusHash}]]`)) {
         logger.info('Generating license HTML skipped');
@@ -702,7 +701,7 @@ async function main(): Promise<void> {
   }
 
   if (!KEEP_CACHE) {
-    logger.debug(`Deleting cache from: ${TMP_FOLDER_PATH}`)
+    logger.debug(`Deleting cache from: ${TMP_FOLDER_PATH}`);
     rimraf.sync(TMP_FOLDER_PATH);
   }
   logger.info('Done!');
