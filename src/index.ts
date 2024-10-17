@@ -3,8 +3,9 @@ import { URL } from 'url';
 import process from 'process';
 import path from 'path';
 import fs from 'fs';
-import rimraf from 'rimraf';
+import { rimraf } from 'rimraf';
 import yargs from 'yargs';
+import { hideBin } from 'yargs/helpers';
 import tar from 'tar';
 import mustache from 'mustache';
 import winston from 'winston';
@@ -30,7 +31,7 @@ const cache = new cacheModule();
 const superagentCache = cachePlugin(cache);
 
 let CWD = '';
-let MONOREPO_ROOT: string | undefined = undefined;
+let MONOREPO_ROOT: string | undefined;
 let REGISTRY = '';
 let LOG_LEVEL = 'warn';
 let TMP_FOLDER_PATH = '';
@@ -44,11 +45,11 @@ let ONLY_LOCAL_TAR = true;
 let ERR_MISSING = false;
 let EXTERNAL_LINKS = true;
 let ADD_INDEX = false;
-let TITLE = false;
+let TITLE: string | undefined;
 let IGNORED = 'html-license-gen';
 let ONLY_PROD = false;
 let KEEP_CACHE = false;
-let CHECKSUM_PATH: string | boolean = false;
+let CHECKSUM_PATH: string | undefined;
 let CHECKSUM_EMBED = false;
 let AVOID_REGISTRY = true;
 
@@ -159,7 +160,7 @@ async function getPkgLicense(pkg: PkgInfo): Promise<LicenseInfo> {
           if (!res.body.license) {
             try {
               license.type = res.body.versions[pkg.version].license;
-            } catch (e) {
+            } catch {
               logger.error(`Could not find license info in registry for ${pkg.name} ${pkg.version}`);
               resolve(false);
               return license;
@@ -170,7 +171,7 @@ async function getPkgLicense(pkg: PkgInfo): Promise<LicenseInfo> {
           if (!pkg.tarball) {
             try {
               pkg.tarball = res.body.versions[pkg.version].dist.tarball;
-            } catch (e) {
+            } catch {
               logger.error(`Could not find version info for ${pkg.name} ${pkg.version}`);
               resolve(false);
               return license;
@@ -214,7 +215,7 @@ async function getPkgLicense(pkg: PkgInfo): Promise<LicenseInfo> {
           license.texts[textId] = text;
         }
       }
-    } catch (e) {
+    } catch {
       /* empty */
     }
   }
@@ -292,7 +293,7 @@ async function getPkgLicense(pkg: PkgInfo): Promise<LicenseInfo> {
           let parsedLicense: SPDXLicense | SPDXJunction | undefined;
           try {
             parsedLicense = spdx(license.type);
-          } catch (e) {
+          } catch {
             logger.error(`Error: Could not parse license string '${license.type}' for ${license.pkg.name}!`);
             resolve();
             return;
@@ -559,9 +560,9 @@ async function main(): Promise<void> {
 
   const versionCorpusHash = crypto.createHash('sha1').update(versionCorpus).digest('hex');
 
-  if (CHECKSUM_PATH !== false) {
-    if (fs.existsSync(CHECKSUM_PATH as string)) {
-      const gotDigest = fs.readFileSync(CHECKSUM_PATH as string, 'utf8');
+  if (CHECKSUM_PATH != null) {
+    if (fs.existsSync(CHECKSUM_PATH)) {
+      const gotDigest = fs.readFileSync(CHECKSUM_PATH, 'utf8');
       if (gotDigest == versionCorpusHash) {
         logger.info('Generating license HTML skipped');
         logger.verbose(`License already generated for corpus: ${versionCorpusHash}`);
@@ -692,8 +693,8 @@ async function main(): Promise<void> {
 
     fs.writeFileSync(OUT_PATH, outText);
     logger.verbose(`Saved output HTML into: ${OUT_PATH}`);
-    if (CHECKSUM_PATH !== false) {
-      fs.writeFileSync(CHECKSUM_PATH as string, versionCorpusHash);
+    if (CHECKSUM_PATH != null) {
+      fs.writeFileSync(CHECKSUM_PATH, versionCorpusHash);
       logger.verbose(`Saved checksum ${versionCorpusHash} into: ${CHECKSUM_PATH}`);
     }
   } catch (e) {
@@ -707,162 +708,161 @@ async function main(): Promise<void> {
   logger.info('Done!');
 }
 
-yargs
+yargs(hideBin(process.argv))
   .scriptName('html-license-gen')
-  .command('$0 [folder]', '', (yargs) => {
-    const argv = yargs
+  .command(
+    '$0 [folder]',
+    '',
+    (yargs) =>
+      yargs
+        // files and paths
+        .positional('folder', {
+          describe: 'Folder of NPM project. Defaults to current working directory',
+          type: 'string',
+        })
+        .option('monorepo-root', {
+          describe: 'Root folder of monorepo - if project is in monorepo',
+          type: 'string',
+        })
+        .option('out-path', {
+          describe: 'HTML output path',
+          type: 'string',
+          default: './licenses.html',
+        })
+        .option('tmp-folder-name', {
+          describe: 'Name of temporary folder',
+          type: 'string',
+          default: '.license-gen-tmp',
+        })
 
-      // files and paths
+        // appearance
+        .option('group', {
+          describe: 'Group licenses',
+          type: 'boolean',
+          default: true,
+        })
+        .option('external-links', {
+          describe: 'Link package names to their repos',
+          type: 'boolean',
+          default: true,
+        })
+        .option('add-index', {
+          describe: 'Creates index with link to licenses below',
+          type: 'boolean',
+          default: false,
+        })
+        .option('title', {
+          describe: 'Use given value as document title',
+          type: 'string',
+        })
+        .option('template', {
+          describe: 'Path to custom mustache template',
+          type: 'string',
+        })
 
-      .positional('folder', {
-        describe: 'Folder of NPM project. Defaults to current working directory',
-        type: 'string',
-      })
-      .option('monorepo-root', {
-        describe: 'Root folder of monorepo - if project is in monorepo',
-        type: 'string',
-        default: undefined,
-      })
-      .option('out-path', {
-        describe: 'HTML output path',
-        type: 'string',
-        default: './licenses.html',
-      })
-      .option('tmp-folder-name', {
-        describe: 'Name of temporary folder',
-        type: 'string',
-        default: '.license-gen-tmp',
-      })
+        // package related
 
-      // appearance
-      .option('group', {
-        describe: 'Group licenses',
-        type: 'boolean',
-        default: true,
-      })
-      .option('external-links', {
-        describe: 'Link package names to their repos',
-        type: 'boolean',
-        default: true,
-      })
-      .option('add-index', {
-        describe: 'Creates index with link to licenses below',
-        type: 'boolean',
-        default: false,
-      })
-      .option('title', {
-        describe: 'Use given value as document title',
-        type: 'string',
-        default: false,
-      })
-      .option('template', {
-        describe: 'Path to custom mustache template',
-        type: 'string',
-      })
+        .option('registry', {
+          describe: 'URL of package registry to use',
+          type: 'string',
+          default: 'https://registry.npmjs.org',
+        })
+        .option('ignored', {
+          describe: 'Semicolon-separated list of packages to ignore',
+          type: 'string',
+          default: 'html-license-gen',
+        })
+        .option('only-prod', {
+          describe: 'Ignore optional and dev dependencies',
+          type: 'boolean',
+          default: false,
+        })
+        .option('package-lock', {
+          describe: 'Run on all packages listed in package-lock.json',
+          type: 'boolean',
+          default: false,
+        })
 
-      // package related
+        // cache and optimization
 
-      .option('registry', {
-        describe: 'URL of package registry to use',
-        type: 'string',
-        default: 'https://registry.npmjs.org',
-      })
-      .option('ignored', {
-        describe: 'Semicolon-separated list of packages to ignore',
-        type: 'string',
-        default: 'html-license-gen',
-      })
-      .option('only-prod', {
-        describe: 'Ignore optional and dev dependencies',
-        type: 'boolean',
-        default: false,
-      })
-      .option('package-lock', {
-        describe: 'Run on all packages listed in package-lock.json',
-        type: 'boolean',
-        default: false,
-      })
+        .option('keep-cache', {
+          describe: 'Do not clean cache after run',
+          type: 'boolean',
+          default: false,
+        })
+        .option('checksum-path', {
+          describe: 'Checksum file path, to detect if update of HTML is needed',
+          type: 'string',
+        })
+        .option('checksum-embed', {
+          describe: 'Embed checksum into HTML to detect need for update',
+          type: 'boolean',
+          default: false,
+        })
+        .option('avoid-registry', {
+          describe: 'Try local package.json instead asking online registry',
+          type: 'boolean',
+          default: true,
+        })
+        .option('no-spdx', {
+          describe: 'Do not download license file based on SPDX string',
+          type: 'boolean',
+          default: false,
+        })
+        .option('only-spdx', {
+          describe: 'Do not use tarballs, only use SPDX string',
+          type: 'boolean',
+          default: false,
+        })
+        .option('only-local-tar', {
+          describe: 'Do not download tarballs, use only local tarballs',
+          type: 'boolean',
+          default: true,
+        })
 
-      // cache and optimization
+        // misc
+        .option('log-level', {
+          describe: 'Configures how verbose logs are, one of the following values: error, warn, info, verbose, debug',
+          type: 'string',
+          default: 'warn',
+        })
 
-      .option('keep-cache', {
-        describe: 'Do not clean cache after run',
-        type: 'boolean',
-        default: false,
-      })
-      .option('checksum-path', {
-        describe: 'Checksum file path, to detect if update of HTML is needed',
-        type: 'string',
-        default: false,
-      })
-      .option('checksum-embed', {
-        describe: 'Embed checksum into HTML to detect need for update',
-        type: 'boolean',
-        default: false,
-      })
-      .option('avoid-registry', {
-        describe: 'Try local package.json instead asking online registry',
-        type: 'boolean',
-        default: true,
-      })
-      .option('no-spdx', {
-        describe: 'Do not download license file based on SPDX string',
-        type: 'boolean',
-        default: false,
-      })
-      .option('only-spdx', {
-        describe: 'Do not use tarballs, only use SPDX string',
-        type: 'boolean',
-        default: false,
-      })
-      .option('only-local-tar', {
-        describe: 'Do not download tarballs, use only local tarballs',
-        type: 'boolean',
-        default: true,
-      })
-
-      // misc
-      .option('log-level', {
-        describe: 'Configures how verbose logs are, one of the following values: error, warn, info, verbose, debug',
-        type: 'string',
-        default: 'warn',
-      })
-
-      .option('error-missing', {
-        describe: 'Exit 1 if no license is present for a package',
-        type: 'boolean',
-        default: false,
-      }).argv;
-
-    const allowedLogLevels = ['error', 'warn', 'info', 'verbose', 'debug'];
-    const folder = argv.folder || (argv._[0] as string);
-    CWD = folder ? path.resolve(folder) : process.cwd();
-    MONOREPO_ROOT = argv['monorepo-root'] ? path.resolve(argv['monorepo-root']) : undefined;
-    REGISTRY = argv.registry;
-    TMP_FOLDER_PATH = path.resolve(CWD, argv['tmp-folder-name']);
-    OUT_PATH = path.resolve(argv['out-path']);
-    GROUP = argv['group'];
-    EXTERNAL_LINKS = argv['external-links'];
-    ADD_INDEX = argv['add-index'];
-    TITLE = argv['title'];
-    IGNORED = argv['ignored'];
-    ONLY_PROD = argv['only-prod'];
-    KEEP_CACHE = argv['keep-cache'];
-    CHECKSUM_PATH = argv['checksum-path'];
-    CHECKSUM_EMBED = argv['checksum-embed'];
-    TEMPLATE_PATH = argv.template ? path.resolve(argv.template) : path.join(__dirname, 'template.html');
-    AVOID_REGISTRY = argv['avoid-registry'];
-    RUN_PKG_LOCK = argv['package-lock'];
-    NO_SPDX = argv['no-spdx'];
-    ONLY_SPDX = argv['only-spdx'];
-    ONLY_LOCAL_TAR = argv['only-local-tar'];
-    ERR_MISSING = argv['error-missing'];
-    LOG_LEVEL = argv['log-level'] ? (allowedLogLevels.includes(argv['log-level']) ? argv['log-level'] : 'warn') : 'warn';
-    transports.console.level = LOG_LEVEL;
-    main();
-  })
+        .option('error-missing', {
+          describe: 'Exit 1 if no license is present for a package',
+          type: 'boolean',
+          default: false,
+        }),
+    (args) => {
+      const allowedLogLevels = ['error', 'warn', 'info', 'verbose', 'debug'];
+      CWD = path.resolve(args.folder ?? process.cwd());
+      MONOREPO_ROOT = args['monorepo-root'] ? path.resolve(args['monorepo-root']) : undefined;
+      REGISTRY = args.registry;
+      TMP_FOLDER_PATH = path.resolve(CWD, args['tmp-folder-name']);
+      OUT_PATH = path.resolve(args['out-path']);
+      GROUP = args['group'];
+      EXTERNAL_LINKS = args['external-links'];
+      ADD_INDEX = args['add-index'];
+      TITLE = args['title'];
+      IGNORED = args['ignored'];
+      ONLY_PROD = args['only-prod'];
+      KEEP_CACHE = args['keep-cache'];
+      CHECKSUM_PATH = args['checksum-path'];
+      CHECKSUM_EMBED = args['checksum-embed'];
+      TEMPLATE_PATH = args.template ? path.resolve(args.template) : path.join(__dirname, 'template.html');
+      AVOID_REGISTRY = args['avoid-registry'];
+      RUN_PKG_LOCK = args['package-lock'];
+      NO_SPDX = args['no-spdx'];
+      ONLY_SPDX = args['only-spdx'];
+      ONLY_LOCAL_TAR = args['only-local-tar'];
+      ERR_MISSING = args['error-missing'];
+      LOG_LEVEL = allowedLogLevels.find((level) => level === args['log-level']) ?? 'warn';
+      transports.console.level = LOG_LEVEL;
+      main();
+    },
+  )
   .help()
   .group(['folder', 'monorepo-root', 'out-path', 'tmp-folder-name'], 'Paths and files:')
   .group(['group', 'external-links', 'add-index', 'title', 'template'], 'Output HTML appearance:')
   .group(['registry', 'ignored', 'only-prod', 'package-lock'], 'Package related:')
-  .group(['keep-cache', 'checksum-path', 'checksum-embed', 'avoid-registry', 'no-spdx', 'only-spdx', 'only-local-tar'], 'Cache and optimization:').argv;
+  .group(['keep-cache', 'checksum-path', 'checksum-embed', 'avoid-registry', 'no-spdx', 'only-spdx', 'only-local-tar'], 'Cache and optimization:')
+  .parse();
